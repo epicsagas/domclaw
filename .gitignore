@@ -37,3 +37,7 @@ config/secrets/
 *.key
 *.pem
 *.crt
+
+# Runtime output
+reports/
+logs/

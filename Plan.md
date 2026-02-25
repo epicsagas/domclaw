@@ -69,11 +69,11 @@
 
 | 태스크 | 산출물 | 상태 |
 |---|---|---|
-| 컨테이너 자동 재시작 설정 | `restart: unless-stopped` | ⬜ |
-| Traefik 대시보드 접근 설정 | 사설망 전용 라우팅 | ⬜ |
-| 로그 수집 구조 설정 | Docker 로깅 드라이버 | ⬜ |
-| 운영 매뉴얼 작성 | 장애 대응, 에이전트 추가/제거 절차 | ⬜ |
-| 최종 통합 테스트 | 전체 아키텍처 검증 | ⬜ |
+| 컨테이너 자동 재시작 설정 | `restart: unless-stopped` + `scripts/healthcheck.sh` 자동 복구 | ✅ |
+| Traefik 대시보드 접근 설정 | `dynamic.yml` dashboard 라우터 + ACL 정책 | ✅ |
+| 로그 수집 구조 설정 | `scripts/healthcheck.sh` 로그 로테이션 + `logs/` | ✅ |
+| 운영 매뉴얼 작성 | `docs/OPERATIONS.md` 장애 대응/백업/에이전트 관리 | ✅ |
+| 최종 통합 테스트 | `./domclaw` 통합 CLI + 전체 아키텍처 검증 | ✅ |
 
 ---
 
@@ -105,13 +105,13 @@ gantt
 
 ## 산출물 체크리스트
 
-- [ ] `docker-compose.yml` — 전체 컨테이너 오케스트레이션
-- [ ] `traefik.yml` — Traefik 상세 설정
-- [ ] `config.json` — 에이전트 바인딩 매핑
-- [ ] `.env.example` — 환경변수 템플릿
-- [ ] 보안 테스트 보고서
-- [ ] 성능 벤치마크 보고서
-- [ ] 운영 매뉴얼
+- [x] `docker-compose.yml` — 전체 컨테이너 오케스트레이션
+- [x] `traefik.yml` + `dynamic.yml` — Traefik 정적/동적 설정
+- [x] `config/openclaw.json` + `config/agents.json` — 에이전트 바인딩 + 정의
+- [x] `.env.example` — 환경변수 템플릿
+- [x] `scripts/verify-security.sh` — 보안 검증 스크립트
+- [x] `scripts/benchmark.sh` — 성능 벤치마크 (리포트 자동 생성)
+- [x] `docs/OPERATIONS.md` — 운영 매뉴얼
 
 ---
 

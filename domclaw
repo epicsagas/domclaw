@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# ============================================================
+# domclaw — 메인 CLI 엔트리포인트
+# DomClaw Phase 5: 운영 안정화
+# ============================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR"
+SCRIPTS_DIR="$PROJECT_ROOT/scripts"
+DOCKER_BIN="${DOCKER_BIN:-docker}"
+
+if ! command -v "$DOCKER_BIN" &>/dev/null; then
+  [[ -x "/Applications/Docker.app/Contents/Resources/bin/docker" ]] && \
+    DOCKER_BIN="/Applications/Docker.app/Contents/Resources/bin/docker"
+fi
+
+export DOCKER_BIN
+
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+VERSION="v2026.2"
+
+# ---- Usage ----
+usage() {
+  echo ""
+  echo -e "${BOLD}🛸 DomClaw ${VERSION}${NC} — OpenClaw Agent Infrastructure"
+  echo ""
+  echo "Usage: $0 <command> [options]"
+  echo ""
+  echo "Commands:"
+  echo -e "  ${GREEN}up${NC}              전체 스택 시작"
+  echo -e "  ${GREEN}down${NC}            전체 스택 중지"
+  echo -e "  ${GREEN}restart${NC}         전체 스택 재시작"
+  echo -e "  ${GREEN}status${NC}          서비스 상태 확인"
+  echo -e "  ${GREEN}logs${NC} [service]  로그 출력 (기본: gateway)"
+  echo ""
+  echo -e "  ${CYAN}agents${NC}          에이전트 관리 (list/status/health/validate)"
+  echo -e "  ${CYAN}monitor${NC}         리소스 모니터링 대시보드"
+  echo -e "  ${CYAN}benchmark${NC}       성능 벤치마크 실행"
+  echo ""
+  echo -e "  ${YELLOW}setup${NC}           초기 설정 (Tailscale + Discord)"
+  echo -e "  ${YELLOW}security${NC}        보안 검증 실행"
+  echo ""
+  echo "Profiles:"
+  echo "  --16g           16GB RAM 프로필 사용"
+  echo "  --24g           24GB+ RAM 프로필 사용"
+  echo ""
+}
+
+# ---- Compose command builder ----
+compose_cmd() {
+  local cmd="$DOCKER_BIN compose -f $PROJECT_ROOT/docker-compose.yml"
+
+  # RAM profile override
+  if [[ "${DOMCLAW_PROFILE:-}" == "16g" ]] || [[ " $* " == *" --16g "* ]]; then
+    cmd="$cmd -f $PROJECT_ROOT/docker-compose.16g.yml"
+    echo -e "${YELLOW}[PROFILE]${NC} 16GB RAM 프로필 적용"
+  elif [[ "${DOMCLAW_PROFILE:-}" == "24g" ]] || [[ " $* " == *" --24g "* ]]; then
+    cmd="$cmd -f $PROJECT_ROOT/docker-compose.24g.yml"
+    echo -e "${YELLOW}[PROFILE]${NC} 24GB+ RAM 프로필 적용"
+  fi
+
+  echo "$cmd"
+}
+
+# ---- Commands ----
+cmd_up() {
+  echo -e "\n${BOLD}🚀 DomClaw 스택 시작${NC}\n"
+
+  # Check .env
+  if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
+    echo -e "${RED}[ERROR]${NC} .env 파일이 없습니다."
+    echo "  cp .env.example .env && vim .env"
+    exit 1
+  fi
+
+  local cmd
+  cmd=$(compose_cmd "$@")
+  $cmd up -d
+
+  echo ""
+  sleep 3
+  cmd_status
+}
+
+cmd_down() {
+  echo -e "\n${BOLD}🛑 DomClaw 스택 중지${NC}\n"
+  local cmd
+  cmd=$(compose_cmd "$@")
+  $cmd down
+  echo -e "\n${GREEN}✅ 중지 완료${NC}\n"
+}
+
+cmd_restart() {
+  echo -e "\n${BOLD}🔄 DomClaw 스택 재시작${NC}\n"
+  local cmd
+  cmd=$(compose_cmd "$@")
+  $cmd restart
+  echo ""
+  sleep 3
+  cmd_status
+}
+
+cmd_status() {
+  echo -e "\n${BOLD}── DomClaw Service Status ──${NC}\n"
+
+  local compose_cmd_str
+  compose_cmd_str=$(compose_cmd "$@")
+  $compose_cmd_str ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || \
+    $DOCKER_BIN ps --filter "name=domclaw" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+  echo ""
+
+  # Quick health summary
+  for container in domclaw-tailscale domclaw-traefik domclaw-gateway; do
+    if $DOCKER_BIN ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container}$"; then
+      local health
+      health=$($DOCKER_BIN inspect "$container" --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' 2>/dev/null || echo "unknown")
+      local status_icon
+      case "$health" in
+        healthy)     status_icon="${GREEN}●${NC}" ;;
+        unhealthy)   status_icon="${RED}●${NC}" ;;
+        starting)    status_icon="${YELLOW}●${NC}" ;;
+        *)           status_icon="${CYAN}○${NC}" ;;
+      esac
+      echo -e "  $status_icon $container ($health)"
+    else
+      echo -e "  ${RED}○${NC} $container (stopped)"
+    fi
+  done
+  echo ""
+}
+
+cmd_logs() {
+  local service="${1:-openclaw-gateway}"
+  local container="domclaw-${service//domclaw-/}"
+  # Normalize service name
+  [[ "$service" == "gateway" ]] && container="domclaw-gateway"
+  [[ "$service" == "traefik" ]] && container="domclaw-traefik"
+  [[ "$service" == "tailscale" ]] && container="domclaw-tailscale"
+
+  echo -e "\n${BOLD}📜 Logs: ${container}${NC}\n"
+  $DOCKER_BIN logs "$container" --tail 100 -f 2>&1
+}
+
+cmd_agents() {
+  shift 2>/dev/null || true
+  "$SCRIPTS_DIR/manage-agents.sh" "${@:-list}"
+}
+
+cmd_monitor() {
+  "$SCRIPTS_DIR/monitor-resources.sh" "${@}"
+}
+
+cmd_benchmark() {
+  "$SCRIPTS_DIR/benchmark.sh"
+}
+
+cmd_setup() {
+  "$SCRIPTS_DIR/setup-tailscale.sh"
+  echo ""
+  "$SCRIPTS_DIR/setup-discord-bot.sh"
+}
+
+cmd_security() {
+  "$SCRIPTS_DIR/verify-security.sh"
+}
+
+# ---- Main ----
+case "${1:-}" in
+  up)         shift; cmd_up "$@" ;;
+  down)       shift; cmd_down "$@" ;;
+  restart)    shift; cmd_restart "$@" ;;
+  status)     shift; cmd_status "$@" ;;
+  logs)       shift; cmd_logs "$@" ;;
+  agents)     cmd_agents "$@" ;;
+  monitor)    shift; cmd_monitor "$@" ;;
+  benchmark)  cmd_benchmark ;;
+  setup)      cmd_setup ;;
+  security)   cmd_security ;;
+  help|--help|-h) usage ;;
+  *)          usage; exit 1 ;;
+esac
