@@ -1,0 +1,117 @@
+# ============================================================
+# DomClaw — Docker Compose Stack (v2026.2)
+# M2 MacBook Pro 최적화 OpenClaw + Traefik + Tailscale 통합
+# ============================================================
+
+services:
+  # ──────────────────────────────────────────────────────────
+  # 1. Tailscale — Zero-Trust 네트워크 게이트웨이
+  # ──────────────────────────────────────────────────────────
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: domclaw-tailscale
+    hostname: ${TS_HOSTNAME:-ai-commander}
+    restart: unless-stopped
+    environment:
+      - TS_AUTHKEY=${TS_KEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_EXTRA_ARGS=--advertise-tags=tag:domclaw
+      - TS_SERVE_CONFIG=/config/serve.json
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./config/tailscale-serve.json:/config/serve.json:ro
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "tailscale", "status", "--json"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ──────────────────────────────────────────────────────────
+  # 2. Traefik v3 — 도메인 기반 지능형 라우터
+  # ──────────────────────────────────────────────────────────
+  traefik:
+    image: traefik:v3.0
+    container_name: domclaw-traefik
+    restart: unless-stopped
+    # Tailscale 네트워크 스택 공유 → 포트 개방 없이 통신
+    network_mode: "service:tailscale"
+    depends_on:
+      tailscale:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./dynamic.yml:/etc/traefik/dynamic.yml:ro
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    labels:
+      - "traefik.enable=true"
+
+  # ──────────────────────────────────────────────────────────
+  # 3. OpenClaw Gateway — 메인 에이전트 엔진
+  # ──────────────────────────────────────────────────────────
+  openclaw-gateway:
+    image: phioranex/openclaw-gateway:latest
+    container_name: domclaw-gateway
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      tailscale:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - OPENCLAW_CONFIG=/config/openclaw.json
+      - OPENCLAW_PORT=${OPENCLAW_PORT:-3100}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+    volumes:
+      - ./config/openclaw.json:/config/openclaw.json:ro
+      - openclaw-data:/home/node/.openclaw
+      - ${HOME}/projects:/workspace/projects:rw
+    deploy:
+      resources:
+        limits:
+          memory: ${GATEWAY_MEMORY_LIMIT:-4G}
+          cpus: "4.0"
+        reservations:
+          memory: 512M
+          cpus: "1.0"
+    labels:
+      # ---- Public Router: Discord 웹훅 수신 ----
+      - "traefik.enable=true"
+      - "traefik.http.routers.bot-public.rule=Host(`agent.${TAILNET_DOMAIN}`)"
+      - "traefik.http.routers.bot-public.entrypoints=websecure"
+      - "traefik.http.routers.bot-public.middlewares=discord-allowlist@file,rate-limit@file,security-headers@file"
+      - "traefik.http.services.bot-public.loadbalancer.server.port=${OPENCLAW_PORT:-3100}"
+      # ---- Admin Router: 대시보드 (사설망 전용) ----
+      - "traefik.http.routers.admin.rule=PathPrefix(`/admin`)"
+      - "traefik.http.routers.admin.entrypoints=traefik"
+      - "traefik.http.services.admin.loadbalancer.server.port=${OPENCLAW_PORT:-3100}"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:${OPENCLAW_PORT:-3100}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+# ──────────────────────────────────────────────────────────
+# Named Volumes — 데이터 영속성
+# ──────────────────────────────────────────────────────────
+volumes:
+  tailscale-state:
+    driver: local
+  openclaw-data:
+    driver: local

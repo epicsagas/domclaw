@@ -1,0 +1,59 @@
+{
+  "$schema": "https://openclaw.dev/schemas/config.json",
+  "gateway": {
+    "port": 3100,
+    "logLevel": "info",
+    "healthCheck": {
+      "enabled": true,
+      "path": "/health",
+      "intervalMs": 30000
+    }
+  },
+  "bindings": [
+    {
+      "comment": "Resonode 개발 메인 에이전트",
+      "match": {
+        "channel": "discord",
+        "channelId": "REPLACE_WITH_CHANNEL_ID"
+      },
+      "agentId": "resonode-expert",
+      "options": {
+        "requireMention": true,
+        "maxConcurrent": 3
+      },
+      "resources": {
+        "maxMemoryMB": 1024
+      }
+    },
+    {
+      "comment": "Solana 보안 및 트랜잭션 알림",
+      "match": {
+        "channel": "discord",
+        "channelId": "REPLACE_WITH_CHANNEL_ID"
+      },
+      "agentId": "solana-guardian",
+      "options": {
+        "allowlist": ["@crypto-lead"],
+        "maxConcurrent": 2
+      },
+      "resources": {
+        "maxMemoryMB": 1024
+      }
+    },
+    {
+      "comment": "Remogent 원격 에이전트",
+      "match": {
+        "channel": "discord",
+        "channelId": "REPLACE_WITH_CHANNEL_ID"
+      },
+      "agentId": "remogent-worker",
+      "options": {
+        "requireMention": true,
+        "maxConcurrent": 2
+      },
+      "resources": {
+        "maxMemoryMB": 512
+      }
+    }
+  ]
+}

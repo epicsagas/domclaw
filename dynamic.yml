@@ -1,0 +1,50 @@
+# ============================================================
+# Traefik v3 — Dynamic Configuration
+# 미들웨어, 라우터, TLS 동적 설정
+# ============================================================
+
+http:
+  # ---- Middlewares ----
+  middlewares:
+    # Discord 공식 IP 대역만 허용하는 AllowList
+    # https://discord.com/developers/docs/topics/gateway#connecting-to-the-gateway
+    discord-allowlist:
+      ipAllowList:
+        sourceRange:
+          # Discord 공식 IP 대역 (최신 값은 Discord Developer Docs 참조)
+          - "162.159.128.0/17"
+          - "162.158.0.0/15"
+          - "104.16.0.0/13"
+          - "104.24.0.0/14"
+          - "172.64.0.0/13"
+          - "131.0.72.0/22"
+
+    # Rate limiting — 봇 요청 과부하 방지
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+        period: 1m
+
+    # Security headers
+    security-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        frameDeny: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000
+        customFrameOptionsValue: "SAMEORIGIN"
+
+  # ---- Routers ----
+  routers:
+    # Traefik Dashboard — 사설망 전용
+    dashboard:
+      rule: "PathPrefix(`/api`) || PathPrefix(`/dashboard`)"
+      entryPoints:
+        - traefik
+      service: api@internal
+
+  # ---- Services ----
+  # Docker 라벨로 자동 등록되므로 여기선 별도 정의 불필요

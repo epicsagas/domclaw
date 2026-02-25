@@ -1,0 +1,58 @@
+# ============================================================
+# Traefik v3 — Static Configuration
+# DomClaw 도메인 기반 지능형 라우터
+# ============================================================
+
+# ---- Global ----
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+# ---- API / Dashboard ----
+# Dashboard는 Tailscale 사설망을 통해서만 접근 가능
+api:
+  dashboard: true
+  insecure: false
+
+# ---- EntryPoints ----
+entryPoints:
+  # Public — Tailscale Funnel에서 들어오는 HTTPS 트래픽
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+
+  websecure:
+    address: ":443"
+
+  # Internal — 관리 대시보드 전용 (Tailscale망 내부)
+  traefik:
+    address: ":8080"
+
+# ---- Providers ----
+providers:
+  # Docker 라벨 기반 자동 서비스 디스커버리
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false  # 명시적으로 traefik.enable=true인 것만 노출
+    watch: true
+    network: domclaw_default
+
+  # 파일 기반 동적 설정 (미들웨어, TLS 등)
+  file:
+    filename: /etc/traefik/dynamic.yml
+    watch: true
+
+# ---- Logging ----
+log:
+  level: INFO
+  format: json
+
+accessLog:
+  format: json
+  filters:
+    statusCodes:
+      - "400-599"
