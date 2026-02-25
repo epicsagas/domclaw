@@ -79,6 +79,7 @@ services:
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
     volumes:
       - ./config/openclaw.json:/config/openclaw.json:ro
+      - ./config/agents.json:/config/agents.json:ro
       - openclaw-data:/home/node/.openclaw
       - ${HOME}/projects:/workspace/projects:rw
     deploy:

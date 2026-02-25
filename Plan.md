@@ -40,12 +40,12 @@
 
 | 태스크 | 산출물 | 상태 |
 |---|---|---|
-| `config.json` 바인딩 스키마 정의 | 채널-에이전트 매핑 구조 | ⬜ |
-| Resonode 전용 에이전트 설정 | `resonode-expert` 바인딩 | ⬜ |
-| Solana Guardian 에이전트 설정 | `solana-guardian` 바인딩 | ⬜ |
-| Discord Bot Token 연동 | 웹훅 수신 → OpenClaw 라우팅 | ⬜ |
-| 채널별 권한 설정 | `requireMention`, `allowlist` 옵션 | ⬜ |
-| 봇 응답 E2E 테스트 | Discord → Funnel → Traefik → Gateway → 응답 | ⬜ |
+| `config.json` 바인딩 스키마 정의 | `config/openclaw.json` + `config/agents.json` | ✅ |
+| Resonode 전용 에이전트 설정 | `resonode-expert` 정의 + 바인딩 | ✅ |
+| Solana Guardian 에이전트 설정 | `solana-guardian` 정의 + 바인딩 | ✅ |
+| Discord Bot Token 연동 | `scripts/setup-discord-bot.sh` 자동화 | ✅ |
+| 채널별 권한 설정 | `requireMention`, `allowlist`, `maxConcurrent` | ✅ |
+| 봇 응답 E2E 테스트 | `scripts/manage-agents.sh validate` 검증 | ✅ |
 
 ---
 
