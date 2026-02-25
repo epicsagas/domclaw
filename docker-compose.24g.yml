@@ -1,0 +1,31 @@
+# ============================================================
+# Docker Compose Override — M2 24GB+ RAM 프로필
+# 사용법: docker compose -f docker-compose.yml -f docker-compose.24g.yml up -d
+# ============================================================
+
+services:
+  tailscale:
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 64M
+
+  traefik:
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+        reservations:
+          memory: 64M
+
+  openclaw-gateway:
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: "6.0"
+        reservations:
+          memory: 1G
+          cpus: "2.0"

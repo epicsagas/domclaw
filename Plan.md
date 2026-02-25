@@ -55,11 +55,11 @@
 
 | 태스크 | 산출물 | 상태 |
 |---|---|---|
-| Docker 리소스 제한 설정 | `deploy.resources.limits.memory` | ⬜ |
-| 에이전트당 2GB 메모리 쿼터 검증 | 부하 테스트 결과 | ⬜ |
-| 컨테이너 그룹화 최적화 | 단일 게이트웨이 = 다중 봇 아키텍처 | ⬜ |
-| OOM 방어 테스트 | 5개 에이전트 동시 실행 + 메모리 모니터링 | ⬜ |
-| 성능 벤치마크 문서화 | 메모리/CPU 사용량 기준 | ⬜ |
+| Docker 리소스 제한 설정 | `docker-compose.16g.yml`, `docker-compose.24g.yml` | ✅ |
+| 에이전트당 2GB 메모리 쿼터 검증 | `scripts/benchmark.sh` 자동 벤치마크 | ✅ |
+| 컨테이너 그룹화 최적화 | 단일 게이트웨이 아키텍처 (docker-compose.yml) | ✅ |
+| OOM 방어 테스트 | `scripts/benchmark.sh` OOM 방어 검증 섹션 | ✅ |
+| 성능 벤치마크 문서화 | `scripts/monitor-resources.sh` 리소스 대시보드 | ✅ |
 
 ---
 
