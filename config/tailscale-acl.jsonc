@@ -1,0 +1,58 @@
+{
+    // Tailscale ACL Policy for DomClaw
+    // https://tailscale.com/kb/1018/acls/
+    "acls": [
+        // 관리자(owner)는 모든 디바이스에 접근 가능
+        {
+            "action": "accept",
+            "src": [
+                "autogroup:owner"
+            ],
+            "dst": [
+                "*:*"
+            ]
+        },
+        // domclaw 태그가 달린 컨테이너는 외부 Funnel 트래픽만 수신
+        {
+            "action": "accept",
+            "src": [
+                "autogroup:internet"
+            ],
+            "dst": [
+                "tag:domclaw:443"
+            ]
+        }
+    ],
+    // 태그 소유자 정의
+    "tagOwners": {
+        "tag:domclaw": [
+            "autogroup:owner"
+        ]
+    },
+    // SSH 접근 정책
+    "ssh": [
+        {
+            "action": "accept",
+            "src": [
+                "autogroup:owner"
+            ],
+            "dst": [
+                "tag:domclaw"
+            ],
+            "users": [
+                "autogroup:nonroot"
+            ]
+        }
+    ],
+    // Funnel 허용 노드
+    "nodeAttrs": [
+        {
+            "target": [
+                "tag:domclaw"
+            ],
+            "attr": [
+                "funnel"
+            ]
+        }
+    ]
+}

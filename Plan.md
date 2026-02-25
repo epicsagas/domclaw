@@ -25,12 +25,12 @@
 
 | 태스크 | 산출물 | 상태 |
 |---|---|---|
-| Tailscale Funnel 활성화 | HTTPS 외부 엔드포인트 생성 | ⬜ |
-| Traefik 라우터 설정 — Public | `Host()` 규칙으로 Discord 웹훅 도메인 매핑 | ⬜ |
-| Traefik 라우터 설정 — Admin | 사설망 전용 대시보드 라우팅 | ⬜ |
-| IP AllowList 미들웨어 | Discord/Telegram 공식 IP 대역 필터링 | ⬜ |
-| non-root 컨테이너 실행 확인 | `user: "1000:1000"` 검증 | ⬜ |
-| 보안 접근 테스트 | 사설망 외부에서 Admin 접근 차단 확인 | ⬜ |
+| Tailscale Funnel 활성화 | `scripts/setup-tailscale.sh` 자동화 스크립트 | ✅ |
+| Traefik 라우터 설정 — Public | `docker-compose.yml` 라벨 + `dynamic.yml` | ✅ |
+| Traefik 라우터 설정 — Admin | `dynamic.yml` dashboard 라우터 (8080) | ✅ |
+| IP AllowList 미들웨어 | `dynamic.yml` discord-allowlist 미들웨어 | ✅ |
+| non-root 컨테이너 실행 확인 | `scripts/verify-security.sh` 검증 스크립트 | ✅ |
+| 보안 접근 테스트 | `config/tailscale-acl.jsonc` ACL 정책 + 검증 스크립트 | ✅ |
 
 ---
 
