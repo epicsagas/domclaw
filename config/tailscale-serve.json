@@ -6,7 +6,7 @@
     },
     "Web": {
         "${TS_CERT_DOMAIN}:443": {
-            "/": "http://127.0.0.1:443"
+            "/": "http://openclaw-gateway:18789/admin"
         }
     },
     "AllowFunnel": {

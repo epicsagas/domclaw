@@ -27,6 +27,8 @@ entryPoints:
 
   websecure:
     address: ":443"
+    http:
+      tls: {}
 
   # Internal — 관리 대시보드 전용 (Tailscale망 내부)
   traefik:

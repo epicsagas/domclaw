@@ -48,7 +48,7 @@ http:
 
     # OpenClaw Bot — Discord 웹훅 수신 (Discord IP 전용)
     bot-public:
-      rule: "Host(`agent.${TAILNET_DOMAIN}`)"
+      rule: "Host(`agent.epics-macbook-pro-2.mango-alioth.ts.net`)"
       entryPoints:
         - websecure
       middlewares:
@@ -57,24 +57,6 @@ http:
         - security-headers
       service: bot-public-service
 
-    # OpenClaw Admin — 대시보드 (외부 MagicDNS 접근)
-    admin:
-      rule: "Host(`${TAILNET_DOMAIN}`) && PathPrefix(`/admin`)"
-      entryPoints:
-        - websecure
-      middlewares:
-        - security-headers
-      service: admin-service
-
-    # SyntheNode Dashboard — 오케스트레이션 UI
-    synthenode-dashboard:
-      rule: "Host(`${TAILNET_DOMAIN}`) && PathPrefix(`/synthenode`)"
-      entryPoints:
-        - websecure
-      middlewares:
-        - security-headers
-      service: synthenode-dashboard-service
-
   # ---- Services ----
   services:
     bot-public-service:
@@ -82,12 +64,4 @@ http:
         servers:
           - url: "http://openclaw-gateway:18789"
 
-    admin-service:
-      loadBalancer:
-        servers:
-          - url: "http://openclaw-gateway:18789"
-
-    synthenode-dashboard-service:
-      loadBalancer:
-        servers:
-          - url: "http://synthenode:8765"
+    # Admin / SyntheNode는 Tailscale에서 직접 OpenClaw/SyntheNode로 라우팅

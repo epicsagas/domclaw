@@ -31,6 +31,8 @@ services:
           memory: 256M
         reservations:
           memory: 64M
+    networks:
+      - core-internal
     healthcheck:
       test: ["CMD", "tailscale", "status", "--json"]
       interval: 30s
@@ -75,6 +77,8 @@ services:
   # ──────────────────────────────────────────────────────────
   openclaw-gateway:
     # ARM64/Apple Silicon 지원 이미지
+    env_file:
+      - .env
     image: smanx/openclaw:latest
     container_name: domclaw-gateway
     restart: unless-stopped
@@ -82,6 +86,8 @@ services:
     depends_on:
       tailscale:
         condition: service_healthy
+    ports:
+      - "45000:18789"
     environment:
       - NODE_ENV=production
       # smanx/openclaw 이미지 기본 포트: 18789
@@ -104,17 +110,12 @@ services:
     networks:
       - core-internal
     labels:
-      # ---- Public Router: Discord 웹훅 수신 ----
+      # ---- Public Router: Discord 웹훅 수신 (Traefik 경유) ----
       - "traefik.enable=true"
       - "traefik.http.routers.bot-public.rule=Host(`agent.${TAILNET_DOMAIN}`)"
       - "traefik.http.routers.bot-public.entrypoints=websecure"
       - "traefik.http.routers.bot-public.middlewares=discord-allowlist@file,rate-limit@file,security-headers@file"
       - "traefik.http.services.bot-public.loadbalancer.server.port=18789"
-      # ---- Admin Router: 대시보드 (외부 MagicDNS 접근) ----
-      - "traefik.http.routers.admin.rule=Host(`${TAILNET_DOMAIN}`) && PathPrefix(`/admin`)"
-      - "traefik.http.routers.admin.entrypoints=websecure"
-      - "traefik.http.routers.admin.middlewares=security-headers@file"
-      - "traefik.http.services.admin.loadbalancer.server.port=18789"
     healthcheck:
       test:
         [
