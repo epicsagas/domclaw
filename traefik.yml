@@ -34,13 +34,6 @@ entryPoints:
 
 # ---- Providers ----
 providers:
-  # Docker 라벨 기반 자동 서비스 디스커버리
-  docker:
-    endpoint: "unix:///var/run/docker.sock"
-    exposedByDefault: false  # 명시적으로 traefik.enable=true인 것만 노출
-    watch: true
-    network: domclaw_default
-
   # 파일 기반 동적 설정 (미들웨어, TLS 등)
   file:
     filename: /etc/traefik/dynamic.yml

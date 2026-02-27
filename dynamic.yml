@@ -46,5 +46,48 @@ http:
         - traefik
       service: api@internal
 
+    # OpenClaw Bot — Discord 웹훅 수신 (Discord IP 전용)
+    bot-public:
+      rule: "Host(`agent.${TAILNET_DOMAIN}`)"
+      entryPoints:
+        - websecure
+      middlewares:
+        - discord-allowlist
+        - rate-limit
+        - security-headers
+      service: bot-public-service
+
+    # OpenClaw Admin — 대시보드 (외부 MagicDNS 접근)
+    admin:
+      rule: "Host(`${TAILNET_DOMAIN}`) && PathPrefix(`/admin`)"
+      entryPoints:
+        - websecure
+      middlewares:
+        - security-headers
+      service: admin-service
+
+    # SyntheNode Dashboard — 오케스트레이션 UI
+    synthenode-dashboard:
+      rule: "Host(`${TAILNET_DOMAIN}`) && PathPrefix(`/synthenode`)"
+      entryPoints:
+        - websecure
+      middlewares:
+        - security-headers
+      service: synthenode-dashboard-service
+
   # ---- Services ----
-  # Docker 라벨로 자동 등록되므로 여기선 별도 정의 불필요
+  services:
+    bot-public-service:
+      loadBalancer:
+        servers:
+          - url: "http://openclaw-gateway:18789"
+
+    admin-service:
+      loadBalancer:
+        servers:
+          - url: "http://openclaw-gateway:18789"
+
+    synthenode-dashboard-service:
+      loadBalancer:
+        servers:
+          - url: "http://synthenode:8765"

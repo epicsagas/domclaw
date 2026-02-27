@@ -16,7 +16,8 @@ services:
     environment:
       - TS_AUTHKEY=${TS_KEY}
       - TS_STATE_DIR=/var/lib/tailscale
-      - TS_EXTRA_ARGS=--advertise-tags=tag:domclaw
+      # 태그는 Tailscale 관리 콘솔에서 먼저 생성 필요
+      # - TS_EXTRA_ARGS=--advertise-tags=tag:domclaw
       - TS_SERVE_CONFIG=/config/serve.json
     volumes:
       - tailscale-state:/var/lib/tailscale
@@ -44,8 +45,13 @@ services:
     image: traefik:v3.0
     container_name: domclaw-traefik
     restart: unless-stopped
-    # Tailscale 네트워크 스택 공유 → 포트 개방 없이 통신
-    network_mode: "service:tailscale"
+    command:
+      - "--configFile=/etc/traefik/traefik.yml"
+      - "--providers.docker=false"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
     depends_on:
       tailscale:
         condition: service_healthy
@@ -53,6 +59,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
       - ./dynamic.yml:/etc/traefik/dynamic.yml:ro
+    networks:
+      - core-internal
     deploy:
       resources:
         limits:
@@ -66,7 +74,8 @@ services:
   # 3. OpenClaw Gateway — 메인 에이전트 엔진
   # ──────────────────────────────────────────────────────────
   openclaw-gateway:
-    image: phioranex/openclaw-gateway:latest
+    # ARM64/Apple Silicon 지원 이미지
+    image: smanx/openclaw:latest
     container_name: domclaw-gateway
     restart: unless-stopped
     user: "1000:1000"
@@ -75,15 +84,14 @@ services:
         condition: service_healthy
     environment:
       - NODE_ENV=production
-      - OPENCLAW_CONFIG=/config/openclaw.json
-      - OPENCLAW_PORT=${OPENCLAW_PORT:-3100}
+      # smanx/openclaw 이미지 기본 포트: 18789
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
-      # Host OpenCode HTTP API (호스트에서 실행 중인 OpenCode 서버)
+      # Host OpenCode HTTP API
       - OPENCODE_BASE_URL=http://host.docker.internal:${OPENCODE_PORT:-4096}
     volumes:
-      - ./config/openclaw.json:/config/openclaw.json:ro
-      - ./config/agents.json:/config/agents.json:ro
-      - ${OPENCLAW_DATA_HOST_PATH}:/home/node/.openclaw:ro
+      - ${OPENCLAW_DATA_HOST_PATH}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_PATH}:/home/node/.openclaw/workspace:rw
     deploy:
       resources:
@@ -101,20 +109,17 @@ services:
       - "traefik.http.routers.bot-public.rule=Host(`agent.${TAILNET_DOMAIN}`)"
       - "traefik.http.routers.bot-public.entrypoints=websecure"
       - "traefik.http.routers.bot-public.middlewares=discord-allowlist@file,rate-limit@file,security-headers@file"
-      - "traefik.http.services.bot-public.loadbalancer.server.port=${OPENCLAW_PORT:-3100}"
+      - "traefik.http.services.bot-public.loadbalancer.server.port=18789"
       # ---- Admin Router: 대시보드 (외부 MagicDNS 접근) ----
       - "traefik.http.routers.admin.rule=Host(`${TAILNET_DOMAIN}`) && PathPrefix(`/admin`)"
       - "traefik.http.routers.admin.entrypoints=websecure"
       - "traefik.http.routers.admin.middlewares=security-headers@file"
-      - "traefik.http.services.admin.loadbalancer.server.port=${OPENCLAW_PORT:-3100}"
+      - "traefik.http.services.admin.loadbalancer.server.port=18789"
     healthcheck:
       test:
         [
-          "CMD",
-          "wget",
-          "--spider",
-          "-q",
-          "http://localhost:${OPENCLAW_PORT:-3100}/health",
+          "CMD-SHELL",
+          'node -e "http.get(''http://localhost:18789/health'',(r)=>process.exit(r.statusCode===200?0:1)).on(''error'',()=>process.exit(1))"',
         ]
       interval: 30s
       timeout: 10s
@@ -138,68 +143,56 @@ services:
   # ──────────────────────────────────────────────────────────
 
   # ──────────────────────────────────────────────────────────
-  # 5. SyntheNode — Meta-orchestration layer for AI agents
+  # 5. SyntheNode — DISABLED (개발 중, GitHub에 아직 없음)
   # ──────────────────────────────────────────────────────────
-  synthenode:
-    image: ${SYNTHENODE_IMAGE:-phioranex/synthenode:latest}
-    container_name: domclaw-synthenode
-    restart: unless-stopped
-    user: "1000:1000"
-    depends_on:
-      openclaw-gateway:
-        condition: service_healthy
-      # OpenCode는 호스트에서 실행되므로 의존성 없음
-    environment:
-      # Server config
-      - SYNTHENODE_PORT=${SYNTHENODE_PORT:-8765}
-      - ENVIRONMENT=production
-      # Internal service endpoints (Host OpenCode)
-      - OPENCLAW_BASE_URL=http://openclaw-gateway:${OPENCLAW_PORT:-3100}
-      - OPENCODE_BASE_URL=http://host.docker.internal:${OPENCODE_PORT:-4096}
-      # ChromaDB persistence
-      - CHROMADB_PERSIST_DIR=/app/chromadb
-      # Embeddings provider
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
-      # Agent config
-      - ENABLE_AGENTS=claude-code,antigravity,cursor,codex,opencode
-      - OPENCODE_ADAPTER_ENABLED=true
-    volumes:
-      - chromadb-persistence:/app/chromadb
-      - ${SYNTHENODE_CONFIG_PATH:-./config/synthenode.yaml}:/app/synthenode.yaml:ro
-      - ${SYNTHENODE_WORKSPACE_PATH:-./workspace}:/app/workspace:rw
-    deploy:
-      resources:
-        limits:
-          memory: ${SYNTHENODE_MEMORY_LIMIT:-2G}
-          cpus: "2.0"
-        reservations:
-          memory: 512M
-          cpus: "0.5"
-    networks:
-      - core-internal
-    expose:
-      - "${SYNTHENODE_PORT:-8765}"
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:${SYNTHENODE_PORT:-8765}/api/status",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-    labels:
-      # ---- Dashboard Router (외부 MagicDNS 접근) ----
-      - "traefik.enable=true"
-      - "traefik.http.routers.synthenode-dashboard.rule=Host(`${TAILNET_DOMAIN}`) && PathPrefix(`/synthenode`)"
-      - "traefik.http.routers.synthenode-dashboard.entrypoints=websecure"
-      - "traefik.http.routers.synthenode-dashboard.middlewares=security-headers@file"
-      - "traefik.http.services.synthenode-dashboard.loadbalancer.server.port=${SYNTHENODE_PORT:-8765}"
+  # synthenode:
+  #   build: ./docker/synthenode
+  #   image: synthenode:local
+  #   container_name: domclaw-synthenode
+  #   restart: unless-stopped
+  #   user: "1000:1000"
+  #   depends_on:
+  #     openclaw-gateway:
+  #       condition: service_healthy
+  #   environment:
+  #     - SYNTHENODE_PORT=${SYNTHENODE_PORT:-8765}
+  #     - ENVIRONMENT=production
+  #     - OPENCLAW_BASE_URL=http://openclaw-gateway:${OPENCLAW_PORT:-3100}
+  #     - OPENCODE_BASE_URL=http://host.docker.internal:${OPENCODE_PORT:-8080}
+  #     - CHROMADB_PERSIST_DIR=/app/chromadb
+  #     - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+  #     - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+  #     - ENABLE_AGENTS=claude-code,antigravity,cursor,codex,opencode
+  #     - OPENCODE_ADAPTER_ENABLED=true
+  #   volumes:
+  #     - chromadb-persistence:/app/chromadb
+  #     - ${SYNTHENODE_CONFIG_PATH:-./config/synthenode.yaml}:/app/synthenode.yaml:ro
+  #     - ${SYNTHENODE_WORKSPACE_PATH:-./workspace}:/app/workspace:rw
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: ${SYNTHENODE_MEMORY_LIMIT:-2G}
+  #         cpus: "2.0"
+  #       reservations:
+  #         memory: 512M
+  #         cpus: "0.5"
+  #   networks:
+  #     - core-internal
+  #   expose:
+  #     - "${SYNTHENODE_PORT:-8765}"
+  #   healthcheck:
+  #     test:
+  #       [
+  #         "CMD",
+  #         "curl",
+  #         "-f",
+  #         "http://localhost:${SYNTHENODE_PORT:-8765}/api/status",
+  #       ]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 20s
 
 # ──────────────────────────────────────────────────────────
 # Named Volumes — 데이터 영속성
