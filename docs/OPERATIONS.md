@@ -219,39 +219,51 @@ docker run --rm -v domclaw_tailscale-state:/data -v $(pwd):/backup \
 
 ## 6. OpenCode 연동
 
-DomClaw 스택은 OpenClaw 게이트웨이와 OpenCode 추론 엔진을 **Docker 내부 브리지 네트워크**로만 연결합니다.  
-외부 포트는 열지 않고, `openclaw-gateway` → `opencode` 간 내부 HTTP 호출만 허용됩니다.
+OpenCode는 **호스트에서 직접 실행**하며, Docker 컨테이너는 `host.docker.internal`을 통해 접근합니다.
 
 ### 구성 개요
 
 ```mermaid
-flowchart TD
-    TS[Tailscale] -. network_mode .-> T[Traefik]
-    T --> G[openclaw-gateway]
-    G <-->|HTTP :${OPENCODE_PORT}| O[opencode]
-
-    subgraph Core-Internal["core-internal (Docker bridge)"]
-        G
-        O
+flowchart TB
+    subgraph Docker["Docker Stack"]
+        TS["Tailscale"]
+        TR["Traefik v3"]
+        GW["OpenClaw Gateway<br/>:3100"]
+        SN["SyntheNode<br/>:8765"]
+        
+        TS -.->|network_mode| TR
+        TR --> GW
+        TR --> SN
     end
+
+    subgraph Host["호스트 (macOS)"]
+        OC["OpenCode HTTP Server<br/>:4096"]
+        CMD["$ opencode serve --hostname 0.0.0.0"]
+        CMD --> OC
+    end
+
+    GW -->|host.docker.internal:4096| OC
+    SN -->|host.docker.internal:4096| OC
 ```
 
-- **네트워크**: `core-internal` 브리지 네트워크
-- **OpenCode 서비스명**: `opencode`
-- **내부 포트**: `.env`의 `OPENCODE_PORT` (기본 8080)
-- **데이터 디렉터리**:
-  - 호스트: `/Volumes/Micron/.opencode`
-  - 컨테이너: `/root/.opencode`
+### 사전 요구사항
+
+DomClaw 스택 시작 전, 호스트에서 OpenCode 서버를 실행해야 합니다:
+
+```bash
+# OpenCode HTTP 서버 시작
+opencode serve --hostname 0.0.0.0 --port 4096 --cors http://localhost:3100
+
+# 또는 웹 UI 포함
+opencode web --hostname 0.0.0.0 --port 4096 --cors http://localhost:3100
+```
 
 ### .env 설정
 
 ```bash
-# ---- OpenCode ----
-# Host path for OpenCode runtime data (~/.opencode equivalent)
-OPENCODE_DATA_HOST_PATH=/Volumes/Micron/.opencode
-
-# OpenCode internal HTTP port
-OPENCODE_PORT=8080
+# ---- OpenCode (호스트) ----
+# OpenCode HTTP API port (호스트에서 실행 중인 서버)
+OPENCODE_PORT=4096
 ```
 
 ### docker-compose 핵심 설정
@@ -260,20 +272,16 @@ OPENCODE_PORT=8080
 services:
   openclaw-gateway:
     environment:
-      - OPENCODE_BASE_URL=http://opencode:${OPENCODE_PORT:-8080}
+      # Host OpenCode HTTP API
+      - OPENCODE_BASE_URL=http://host.docker.internal:${OPENCODE_PORT:-4096}
     networks:
       - core-internal
 
-  opencode:
-    image: ghcr.io/opencode-ai/opencode:latest
+  synthenode:
     environment:
-      - PORT=${OPENCODE_PORT:-8080}
-    volumes:
-      - ${OPENCODE_DATA_HOST_PATH}:/root/.opencode
+      - OPENCODE_BASE_URL=http://host.docker.internal:${OPENCODE_PORT:-4096}
     networks:
       - core-internal
-    expose:
-      - "${OPENCODE_PORT:-8080}"
 
 networks:
   core-internal:
@@ -283,10 +291,24 @@ networks:
 ### 재시작 절차
 
 ```bash
-# .env 수정 후 스택 재시작
-./domclaw down
+# 1. 호스트에서 OpenCode 시작
+opencode serve --hostname 0.0.0.0 --port 4096 --cors http://localhost:3100
+
+# 2. DomClaw 스택 시작
 ./domclaw up
 ```
+
+### 연결 확인
+
+```bash
+# 호스트 OpenCode 서버 확인
+curl http://localhost:4096/api/status
+
+# 컨테이너에서 호스트 접근 확인
+docker exec domclaw-gateway curl http://host.docker.internal:4096/api/status
+```
+
+> 자세한 내용은 [Host OpenCode 연동 가이드](./HOST_OPENCODE_GUIDE.md)를 참조하세요.
 
 ---
 

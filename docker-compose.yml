@@ -1,6 +1,7 @@
 # ============================================================
 # DomClaw — Docker Compose Stack (v2026.2)
 # M2 MacBook Pro 최적화 OpenClaw + Traefik + Tailscale 통합
+# OpenCode는 호스트에서 실행 (Docker 컨테이너 아님)
 # ============================================================
 
 services:
@@ -77,8 +78,8 @@ services:
       - OPENCLAW_CONFIG=/config/openclaw.json
       - OPENCLAW_PORT=${OPENCLAW_PORT:-3100}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
-      # OpenCode HTTP endpoint (internal Docker network)
-      - OPENCODE_BASE_URL=http://opencode:${OPENCODE_PORT:-8080}
+      # Host OpenCode HTTP API (호스트에서 실행 중인 OpenCode 서버)
+      - OPENCODE_BASE_URL=http://host.docker.internal:${OPENCODE_PORT:-4096}
     volumes:
       - ./config/openclaw.json:/config/openclaw.json:ro
       - ./config/agents.json:/config/agents.json:ro
@@ -121,22 +122,21 @@ services:
       start_period: 20s
 
   # ──────────────────────────────────────────────────────────
-  # 4. OpenCode — AI 추론 엔진 (내부 전용)
+  # 4. Host OpenCode 연동 가이드
   # ──────────────────────────────────────────────────────────
-  opencode:
-    image: ghcr.io/opencode-ai/opencode:latest
-    container_name: domclaw-opencode
-    restart: unless-stopped
-    environment:
-      - PORT=${OPENCODE_PORT:-8080}
-    volumes:
-      - ${OPENCODE_DATA_HOST_PATH}:/root/.opencode
-    networks:
-      - core-internal
-    expose:
-      - "${OPENCODE_PORT:-8080}"
+  # OpenCode는 Docker 컨테이너가 아닌 호스트에서 실행
+  #
+  # 실행 명령어:
+  #   opencode serve --hostname 0.0.0.0 --port 4096 --cors http://localhost:3100
+  #   또는
+  #   opencode web --hostname 0.0.0.0 --port 4096 --cors http://localhost:3100
+  #
+  # 인증 추가:
+  #   OPENCODE_SERVER_PASSWORD=your-password opencode serve --hostname 0.0.0.0 --port 4096
+  #
+  # OpenAPI 문서: http://localhost:4096/doc
+  # ──────────────────────────────────────────────────────────
 
-#VH|
   # ──────────────────────────────────────────────────────────
   # 5. SyntheNode — Meta-orchestration layer for AI agents
   # ──────────────────────────────────────────────────────────
@@ -148,15 +148,14 @@ services:
     depends_on:
       openclaw-gateway:
         condition: service_healthy
-      opencode:
-        condition: service_started
+      # OpenCode는 호스트에서 실행되므로 의존성 없음
     environment:
       # Server config
       - SYNTHENODE_PORT=${SYNTHENODE_PORT:-8765}
       - ENVIRONMENT=production
-      # Internal service endpoints
+      # Internal service endpoints (Host OpenCode)
       - OPENCLAW_BASE_URL=http://openclaw-gateway:${OPENCLAW_PORT:-3100}
-      - OPENCODE_BASE_URL=http://opencode:${OPENCODE_PORT:-8080}
+      - OPENCODE_BASE_URL=http://host.docker.internal:${OPENCODE_PORT:-4096}
       # ChromaDB persistence
       - CHROMADB_PERSIST_DIR=/app/chromadb
       # Embeddings provider
@@ -188,18 +187,20 @@ services:
           "CMD",
           "curl",
           "-f",
-          "http://localhost:${SYNTHENODE_PORT:-8765}/api/status"
+          "http://localhost:${SYNTHENODE_PORT:-8765}/api/status",
         ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
+    labels:
       # ---- Dashboard Router (외부 MagicDNS 접근) ----
       - "traefik.enable=true"
       - "traefik.http.routers.synthenode-dashboard.rule=Host(`${TAILNET_DOMAIN}`) && PathPrefix(`/synthenode`)"
       - "traefik.http.routers.synthenode-dashboard.entrypoints=websecure"
       - "traefik.http.routers.synthenode-dashboard.middlewares=security-headers@file"
       - "traefik.http.services.synthenode-dashboard.loadbalancer.server.port=${SYNTHENODE_PORT:-8765}"
+
 # ──────────────────────────────────────────────────────────
 # Named Volumes — 데이터 영속성
 # ──────────────────────────────────────────────────────────
