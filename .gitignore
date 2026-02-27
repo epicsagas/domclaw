@@ -31,6 +31,7 @@ tailscale/state/
 
 # Docker volumes
 volumes/
+.openclaw/
 
 # Sensitive config overrides
 config/secrets/

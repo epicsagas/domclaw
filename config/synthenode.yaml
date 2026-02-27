@@ -1,0 +1,124 @@
+# ============================================================
+# SyntheNode Configuration for DomClaw Integration
+# Universal Autonomous Agent Orchestration System
+# ============================================================
+
+version: "1.0"
+
+project:
+  name: "domclaw"
+  description: "DomClaw AI Agent Infrastructure"
+  stack:
+    - python
+    - nodejs
+    - docker
+    - tailscale
+
+# ── Model Router ──────────────────────────────────────────────
+model_router:
+  rules:
+    - task: planning
+      prefer: opencode
+    - task: implementation
+      prefer: opencode
+    - task: ui-generation
+      prefer: opencode
+    - task: quick-edits
+      prefer: opencode
+    - task: security-review
+      prefer: opencode
+  fallback: opencode
+
+# ── Agent Team ─────────────────────────────────────────────────
+agents:
+  orchestrator:
+    tool: opencode
+    model: anthropic/claude-opus-4-6
+
+# ── Development Units ──────────────────────────────────────────
+units:
+  domclaw-backend:
+    tool: opencode
+    model: glm-5
+    role: backend
+    mcp: [github]
+    skills: [git-atomic, security-scan]
+    guardrails:
+      - no-direct-main-push
+      - always-test-before-commit
+    loop:
+      trigger:
+        type: manual
+      steps:
+        - fetch-ticket
+        - analyze-codebase
+        - implement
+        - run-tests
+        - fix-until-green
+        - create-pr
+      until: tests-pass
+      max_iterations: 15
+
+  domclaw-ops:
+    tool: opencode
+    model: glm-4.7-flash
+    role: devops
+    mcp: [github]
+    skills: [migration-guard, changelog-gen]
+    trigger:
+      on: pr-ready-to-merge
+
+# ── Hooks ─────────────────────────────────────────────────────
+hooks:
+  - id: yaml-validate
+    on: file-written
+    match: "**/*.{yml,yaml}"
+    run: "yamllint {changed_file}"
+    on_failure: warn
+    description: "Validate YAML syntax"
+
+  - id: docker-lint
+    on: file-written
+    match: "**/Dockerfile*"
+    run: "hadolint {changed_file}"
+    on_failure: warn
+    description: "Lint Dockerfile"
+
+# ── MCP Servers ───────────────────────────────────────────────
+mcp:
+  github:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+    description: "GitHub API for PR creation and code review"
+
+# ── Security ──────────────────────────────────────────────────
+security:
+  denied_operations:
+    - "DROP TABLE"
+    - "DROP DATABASE"
+    - "TRUNCATE"
+    - "rm -rf /"
+    - "rm -rf *"
+  require_pr_for_main: true
+  sandbox: false
+  max_files_per_session: 100
+
+# ── Knowledge Graph ───────────────────────────────────────────
+knowledge:
+  path: "./knowledge"
+  auto_sync_interval: 0
+  inject_at_start: true
+  max_injected_entries: 10
+  embedding_model: "text-embedding-3-small"
+  vector_db: "chromadb"
+
+# ── Integration with OpenClaw ─────────────────────────────────
+integration:
+  openclaw:
+    base_url: "${OPENCLAW_BASE_URL:-http://openclaw-gateway:3100}"
+    enabled: true
+  opencode:
+    base_url: "${OPENCODE_BASE_URL:-http://opencode:8080}"
+    enabled: true

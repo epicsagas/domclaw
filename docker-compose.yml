@@ -77,11 +77,13 @@ services:
       - OPENCLAW_CONFIG=/config/openclaw.json
       - OPENCLAW_PORT=${OPENCLAW_PORT:-3100}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      # OpenCode HTTP endpoint (internal Docker network)
+      - OPENCODE_BASE_URL=http://opencode:${OPENCODE_PORT:-8080}
     volumes:
       - ./config/openclaw.json:/config/openclaw.json:ro
       - ./config/agents.json:/config/agents.json:ro
-      - openclaw-data:/home/node/.openclaw
-      - ${HOME}/projects:/workspace/projects:rw
+      - ${OPENCLAW_DATA_HOST_PATH}:/home/node/.openclaw:ro
+      - ${OPENCLAW_WORKSPACE_PATH}:/home/node/.openclaw/workspace:rw
     deploy:
       resources:
         limits:
@@ -90,6 +92,8 @@ services:
         reservations:
           memory: 512M
           cpus: "1.0"
+    networks:
+      - core-internal
     labels:
       # ---- Public Router: Discord 웹훅 수신 ----
       - "traefik.enable=true"
@@ -97,22 +101,117 @@ services:
       - "traefik.http.routers.bot-public.entrypoints=websecure"
       - "traefik.http.routers.bot-public.middlewares=discord-allowlist@file,rate-limit@file,security-headers@file"
       - "traefik.http.services.bot-public.loadbalancer.server.port=${OPENCLAW_PORT:-3100}"
-      # ---- Admin Router: 대시보드 (사설망 전용) ----
-      - "traefik.http.routers.admin.rule=PathPrefix(`/admin`)"
-      - "traefik.http.routers.admin.entrypoints=traefik"
+      # ---- Admin Router: 대시보드 (외부 MagicDNS 접근) ----
+      - "traefik.http.routers.admin.rule=Host(`${TAILNET_DOMAIN}`) && PathPrefix(`/admin`)"
+      - "traefik.http.routers.admin.entrypoints=websecure"
+      - "traefik.http.routers.admin.middlewares=security-headers@file"
       - "traefik.http.services.admin.loadbalancer.server.port=${OPENCLAW_PORT:-3100}"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:${OPENCLAW_PORT:-3100}/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--spider",
+          "-q",
+          "http://localhost:${OPENCLAW_PORT:-3100}/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
 
+  # ──────────────────────────────────────────────────────────
+  # 4. OpenCode — AI 추론 엔진 (내부 전용)
+  # ──────────────────────────────────────────────────────────
+  opencode:
+    image: ghcr.io/opencode-ai/opencode:latest
+    container_name: domclaw-opencode
+    restart: unless-stopped
+    environment:
+      - PORT=${OPENCODE_PORT:-8080}
+    volumes:
+      - ${OPENCODE_DATA_HOST_PATH}:/root/.opencode
+    networks:
+      - core-internal
+    expose:
+      - "${OPENCODE_PORT:-8080}"
+
+#VH|
+  # ──────────────────────────────────────────────────────────
+  # 5. SyntheNode — Meta-orchestration layer for AI agents
+  # ──────────────────────────────────────────────────────────
+  synthenode:
+    image: ${SYNTHENODE_IMAGE:-phioranex/synthenode:latest}
+    container_name: domclaw-synthenode
+    restart: unless-stopped
+    user: "1000:1000"
+    depends_on:
+      openclaw-gateway:
+        condition: service_healthy
+      opencode:
+        condition: service_started
+    environment:
+      # Server config
+      - SYNTHENODE_PORT=${SYNTHENODE_PORT:-8765}
+      - ENVIRONMENT=production
+      # Internal service endpoints
+      - OPENCLAW_BASE_URL=http://openclaw-gateway:${OPENCLAW_PORT:-3100}
+      - OPENCODE_BASE_URL=http://opencode:${OPENCODE_PORT:-8080}
+      # ChromaDB persistence
+      - CHROMADB_PERSIST_DIR=/app/chromadb
+      # Embeddings provider
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      # Agent config
+      - ENABLE_AGENTS=claude-code,antigravity,cursor,codex,opencode
+      - OPENCODE_ADAPTER_ENABLED=true
+    volumes:
+      - chromadb-persistence:/app/chromadb
+      - ${SYNTHENODE_CONFIG_PATH:-./config/synthenode.yaml}:/app/synthenode.yaml:ro
+      - ${SYNTHENODE_WORKSPACE_PATH:-./workspace}:/app/workspace:rw
+    deploy:
+      resources:
+        limits:
+          memory: ${SYNTHENODE_MEMORY_LIMIT:-2G}
+          cpus: "2.0"
+        reservations:
+          memory: 512M
+          cpus: "0.5"
+    networks:
+      - core-internal
+    expose:
+      - "${SYNTHENODE_PORT:-8765}"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:${SYNTHENODE_PORT:-8765}/api/status"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+      # ---- Dashboard Router (외부 MagicDNS 접근) ----
+      - "traefik.enable=true"
+      - "traefik.http.routers.synthenode-dashboard.rule=Host(`${TAILNET_DOMAIN}`) && PathPrefix(`/synthenode`)"
+      - "traefik.http.routers.synthenode-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.synthenode-dashboard.middlewares=security-headers@file"
+      - "traefik.http.services.synthenode-dashboard.loadbalancer.server.port=${SYNTHENODE_PORT:-8765}"
 # ──────────────────────────────────────────────────────────
 # Named Volumes — 데이터 영속성
 # ──────────────────────────────────────────────────────────
 volumes:
   tailscale-state:
     driver: local
-  openclaw-data:
+  chromadb-persistence:
     driver: local
+
+# ──────────────────────────────────────────────────────────
+# Networks — 내부 서비스 전용 브리지 네트워크
+# ──────────────────────────────────────────────────────────
+networks:
+  core-internal:
+    driver: bridge
