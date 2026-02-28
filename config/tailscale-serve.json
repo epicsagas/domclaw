@@ -1,15 +1,7 @@
 {
-    "TCP": {
-        "443": {
-            "HTTPS": true
-        }
-    },
-    "Web": {
-        "${TS_CERT_DOMAIN}:443": {
-            "/": "http://openclaw-gateway:18789/admin"
-        }
-    },
-    "AllowFunnel": {
-        "${TS_CERT_DOMAIN}:443": true
+  "TCP": {
+    "443": {
+      "HTTPS": true
     }
+  }
 }
